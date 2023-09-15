@@ -1,0 +1,90 @@
+version: '3'
+
+networks:
+  solrcloud:
+    external: true
+
+volumes:
+  zookeeper:
+    external: true
+  zookeeper_log:
+    external: true
+  solr1:
+    external: true
+  solr2:
+    external: true
+  solr_backup:
+    external: true
+
+services:
+  traefik:
+    image: traefik:v2.4
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--accesslog=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.http.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - solrcloud
+
+  zookeeper:
+    image: zookeeper:latest
+    container_name: zookeeper
+    # ports:
+    #   - "2181:2181"
+    volumes:
+      - ./zoo.cfg:/conf/zoo.cfg
+      - zookeeper:/data
+      - zookeeper_log:/datalog
+    networks:
+        - solrcloud
+
+  solr1:
+    image: solr:8.11.2
+    container_name: solr1
+    user: "solr:root"
+    environment:
+      - SOLR_HEAP=1024m
+      - SOLR_NODE_NAME=solr1
+      - ZK_HOST=zookeeper:2181
+    volumes:
+      - solr1:/var/solr
+      - solr_backup:/var/solr/data/backup
+      - ./:/var/omeka
+    depends_on:
+      - zookeeper
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.solr1.rule=Host(`solrcloud`)"
+      - "traefik.http.services.solr1.loadbalancer.server.port=8983"
+      - "traefik.http.routers.solr1.entrypoints=http"
+    networks:
+      - solrcloud
+
+  solr2:
+    image: solr:8.11.2
+    container_name: solr2
+    user: "solr:root"
+    environment:
+      - SOLR_HEAP=1024m
+      - SOLR_NODE_NAME=solr2
+      - ZK_HOST=zookeeper:2181
+    volumes:
+      - solr2:/var/solr
+      - solr_backup:/var/solr/data/backup
+    depends_on:
+      - zookeeper
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.solr2.rule=Host(`solrcloud`)"
+      - "traefik.http.services.solr2.loadbalancer.server.port=8983"
+      - "traefik.http.routers.solr2.entrypoints=http"
+    networks:
+      - solrcloud
